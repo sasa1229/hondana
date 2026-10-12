@@ -1,0 +1,695 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f2f4f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1b2027" media="(prefers-color-scheme: dark)">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="本棚">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<style>
+:root { color-scheme: light; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); box-sizing: border-box; }
+body { margin: 0; font: 14px system-ui, sans-serif; }
+</style>
+<title>スキャン本棚</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Old+Mincho:wght@700&display=swap">
+<style>
+/* Layout: 机の色の面に、本棚(表紙のグリッド)と1冊を開いた読書画面の2つ。上に細い操作バー、読書中は下にページスライダー。 */
+:root {
+  --desk: #d9dde3;
+  --bar: #f2f4f7;
+  --fg: #1d2430;
+  --muted: #566070;
+  --line: #bcc3ce;
+  --accent: #0e6b72;
+  --accent-fg: #ffffff;
+  --danger: #b3261e;
+  --paper: #ffffff;
+  --shade: rgba(20, 30, 50, .34);
+  --font-ui: 'Zen Kaku Gothic New', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', sans-serif;
+  --font-display: 'Zen Old Mincho', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --desk: #14171c; --bar: #1b2027; --fg: #e6e9ee; --muted: #9aa4b2; --line: #333b47;
+    --accent: #62c4ca; --accent-fg: #0b1d1f; --danger: #ff9a92; --shade: rgba(0, 0, 0, .6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --desk: #14171c; --bar: #1b2027; --fg: #e6e9ee; --muted: #9aa4b2; --line: #333b47;
+  --accent: #62c4ca; --accent-fg: #0b1d1f; --danger: #ff9a92; --shade: rgba(0, 0, 0, .6);
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--desk); color: var(--fg); font-family: var(--font-ui); font-size: 14px; overflow: hidden; }
+[hidden] { display: none !important; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+#app { height: 100%; display: flex; flex-direction: column; min-height: 0; }
+
+.bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; background: var(--bar); border-bottom: 1px solid var(--line); }
+.name { flex: 1 1 8rem; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+.btn { height: 36px; padding: 0 14px; border: 1px solid var(--line); border-radius: 8px; background: transparent; cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: var(--accent); }
+.btn.fill { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 700; }
+.btn.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 700; height: 44px; padding: 0 28px; font-size: 16px; }
+
+/* shelf */
+#shelf { flex: 1 1 0; min-height: 0; overflow-y: auto; padding: 24px 16px 40px; }
+.shelf-inner { width: min(1100px, 100%); margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+.shelf-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; }
+.shelf-head h1 { margin: 0; font-family: var(--font-display); font-size: 28px; }
+#shelfInfo { margin: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 26px 18px; align-items: start; }
+.card { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.open { display: flex; flex-direction: column; gap: 6px; width: 100%; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; }
+.cover { aspect-ratio: 0.69; background: var(--paper); border-radius: 3px; overflow: hidden; box-shadow: 0 12px 22px -8px var(--shade), 0 2px 4px rgba(0, 0, 0, .2); transition: transform .2s; }
+.cover img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.open:hover .cover { transform: translateY(-3px); }
+.title { font-weight: 700; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.prog { display: block; height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.prog i { display: block; height: 100%; background: var(--accent); }
+.actions { display: flex; gap: 6px; min-height: 28px; align-items: center; }
+.link { height: 28px; padding: 0 8px; border: 0; background: none; color: var(--muted); font-size: 12px; cursor: pointer; border-radius: 6px; }
+.link:hover { color: var(--fg); background: color-mix(in srgb, var(--line) 50%, transparent); }
+.link.danger { color: var(--danger); font-weight: 700; }
+.card .ask { display: none; }
+.card.confirm .ask { display: contents; }
+.card.confirm .idle { display: none; }
+
+#empty { width: min(34rem, 100%); margin: 8vh auto 0; }
+.drop { border: 2px dashed var(--line); border-radius: 14px; padding: 36px 24px; display: flex; flex-direction: column; align-items: flex-start; gap: 14px; background: color-mix(in srgb, var(--bar) 70%, transparent); }
+.drop.over { border-color: var(--accent); }
+.eyebrow { margin: 0; font-size: 12px; letter-spacing: .12em; color: var(--accent); font-weight: 700; }
+.drop h2 { margin: 0; font-family: var(--font-display); font-size: clamp(24px, 5vw, 34px); line-height: 1.35; text-wrap: balance; }
+.lead, .hint { margin: 0; line-height: 1.8; max-width: 32em; }
+.hint { color: var(--muted); font-size: 13px; }
+#msg { margin: 0; min-height: 1.4em; color: var(--accent); font-weight: 500; overflow-wrap: anywhere; }
+
+/* reader */
+#stage { position: relative; flex: 1 1 0; min-height: 0; overflow: hidden; padding-inline: 16px; display: flex; align-items: center; justify-content: center; }
+#book { position: relative; perspective: 4200px; transition: transform .7s cubic-bezier(.45, .05, .25, 1); flex: none; }
+#book[data-solo="L"] { transform: translateX(25%); }
+#book[data-solo="R"] { transform: translateX(-25%); }
+.half { position: absolute; top: 0; width: 50%; height: 100%; background: var(--paper); overflow: hidden; box-shadow: 0 16px 32px -8px var(--shade), 0 2px 5px rgba(0, 0, 0, .18); }
+#hL { left: 0; border-radius: 3px 0 0 3px; }
+#hR { left: 50%; border-radius: 0 3px 3px 0; }
+.half.blank { background: transparent; box-shadow: none; }
+.half canvas, .pg canvas { display: block; width: 100%; height: 100%; }
+.spine { position: absolute; left: 47%; width: 6%; top: 0; height: 100%; z-index: 2; pointer-events: none; background: linear-gradient(to right, transparent, rgba(0, 0, 0, .2) 50%, transparent); transition: opacity .3s; }
+#book.solo .spine { opacity: 0; }
+#book.single #hL, #book.single .spine { display: none; }
+#book.single #hR { left: 0; width: 100%; border-radius: 3px; }
+
+#leaf { position: absolute; top: 0; width: 50%; height: 100%; z-index: 3; transform-style: preserve-3d; will-change: transform; }
+.face { position: absolute; inset: 0; background: var(--paper); overflow: hidden; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+#lb { transform: rotateY(180deg); }
+.pg { position: absolute; inset: 0; }
+.shade { position: absolute; inset: 0; background: #000; opacity: 0; pointer-events: none; }
+
+.nav { position: absolute; top: 50%; translate: 0 -50%; width: 40px; height: 72px; border: 0; border-radius: 10px; background: color-mix(in srgb, var(--bar) 85%, transparent); color: var(--fg); cursor: pointer; display: grid; place-items: center; z-index: 5; }
+.nav:hover { background: var(--bar); }
+.nav:disabled { opacity: .25; cursor: default; }
+.nav svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+#navL { left: 4px; }
+#navR { right: 4px; }
+@media (max-width: 700px) { .nav { width: 32px; height: 56px; opacity: .8; } }
+
+.foot { display: flex; align-items: center; gap: 14px; padding: 8px 16px; background: var(--bar); border-top: 1px solid var(--line); }
+#slider { flex: 1; min-width: 0; accent-color: var(--accent); height: 28px; }
+#pos { min-width: 7.5em; text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (prefers-reduced-motion: reduce) { .cover, #book { transition: none; } }
+</style>
+
+
+</head>
+<body>
+<div id="app">
+  <header class="bar">
+    <button class="btn" id="backBtn" type="button" hidden>‹ 本棚</button>
+    <span class="name" id="bookName">スキャン本棚</span>
+    <button class="btn fill" id="addBtn" type="button">PDFを追加</button>
+    <button class="btn" id="dirBtn" type="button" title="本の開き方を切り替えます" hidden>右開き</button>
+    <button class="btn" id="offBtn" type="button" title="見開きの左右のページが合っていないときに押してください" hidden>ずらす</button>
+    <button class="btn" id="modeBtn" type="button" title="見開きと1ページ表示を切り替えます" hidden>見開き</button>
+    <button class="btn" id="fsBtn" type="button" hidden>全画面</button>
+  </header>
+
+  <section id="shelf">
+    <div class="shelf-inner">
+      <div class="shelf-head" id="shelfHead" hidden>
+        <h1>本棚</h1>
+        <p id="shelfInfo"></p>
+      </div>
+      <div class="grid" id="grid"></div>
+      <div id="empty" hidden>
+        <div class="drop" id="drop">
+          <p class="eyebrow">自炊した本のビューア</p>
+          <h2>スキャンしたPDFを、本棚に並べる</h2>
+          <p class="lead">PDFを追加すると、この端末の本棚に保存されます。次からは選び直さなくても、本棚から開いて続きから読めます。ファイルはこの端末の中だけに保存され、どこにも送信されません。</p>
+          <button class="btn primary" id="pickBtn" type="button">PDFを追加</button>
+          <p class="hint">ここにPDFをドラッグしても追加できます。縦書きの本は右開き、横書きの本は左開きで読めます。</p>
+        </div>
+      </div>
+      <p id="msg" role="status"></p>
+    </div>
+  </section>
+
+  <main id="stage" hidden>
+    <div id="book">
+      <div class="half" id="hL"></div>
+      <div class="half" id="hR"></div>
+      <div class="spine"></div>
+      <div id="leaf" hidden>
+        <div class="face" id="lf"><div class="pg"></div><div class="shade"></div></div>
+        <div class="face" id="lb"><div class="pg"></div><div class="shade"></div></div>
+      </div>
+    </div>
+    <button class="nav" id="navL" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <button class="nav" id="navR" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>
+  </main>
+
+  <footer class="foot" id="foot" hidden>
+    <label class="sr" for="slider">ページ</label>
+    <input id="slider" type="range" min="1" max="1" value="1" step="1">
+    <output id="pos" for="slider"></output>
+  </footer>
+</div>
+<input type="file" id="file" accept="application/pdf,.pdf" multiple hidden>
+
+<script src="vendor/pdf.min.js"></script>
+<script>
+(function () {
+  'use strict';
+  var $ = function (s) { return document.querySelector(s); };
+  var el = {
+    shelf: $('#shelf'), grid: $('#grid'), empty: $('#empty'), shelfHead: $('#shelfHead'), shelfInfo: $('#shelfInfo'),
+    msg: $('#msg'), drop: $('#drop'), file: $('#file'), name: $('#bookName'),
+    backBtn: $('#backBtn'), addBtn: $('#addBtn'), dirBtn: $('#dirBtn'), offBtn: $('#offBtn'), modeBtn: $('#modeBtn'), fsBtn: $('#fsBtn'),
+    stage: $('#stage'), book: $('#book'), hL: $('#hL'), hR: $('#hR'), leaf: $('#leaf'),
+    lf: $('#lf'), lb: $('#lb'), pgF: $('#lf .pg'), pgB: $('#lb .pg'),
+    navL: $('#navL'), navR: $('#navR'), slider: $('#slider'), pos: $('#pos'), foot: $('#foot')
+  };
+  var reduced = function () { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; };
+  var msg = function (t) { el.msg.textContent = t || ''; };
+
+  var off = 1, pdf = null, N = 0, rtl = true, single = false, userMode = false;
+  var spread = 0, busy = false, ratio = 0.69, halfW = 0, boxH = 0, dpr = 1, token = 0, gen = 0;
+  var cache = new Map(), inflight = new Map(), queue = Promise.resolve();
+  var pending = null, books = [], curMeta = null, coverUrls = [], pushed = false, saveT = null;
+
+  if (!window.pdfjsLib) { msg('表示ライブラリを読み込めませんでした。通信状況を確認して、ページを開き直してください。'); return; }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('vendor/pdf.worker.min.js', location.href).href;
+
+  /* ---------- storage (IndexedDB。使えない環境ではメモリに置く) ---------- */
+  var db = null, mem = { books: {}, files: {} };
+  function openDB() {
+    return new Promise(function (res) {
+      try {
+        var r = indexedDB.open('scan-shelf', 1);
+        r.onupgradeneeded = function () { var d = r.result; d.createObjectStore('books', { keyPath: 'id' }); d.createObjectStore('files'); };
+        r.onsuccess = function () { res(r.result); };
+        r.onerror = function () { res(null); };
+        r.onblocked = function () { res(null); };
+      } catch (e) { res(null); }
+    });
+  }
+  function run(stores, mode, fn) {
+    return new Promise(function (res, rej) {
+      var t = db.transaction(stores, mode);
+      var req = fn(t);
+      t.oncomplete = function () { res(req ? req.result : undefined); };
+      t.onerror = t.onabort = function () { rej(t.error); };
+    });
+  }
+  function allBooks() { return db ? run('books', 'readonly', function (t) { return t.objectStore('books').getAll(); }) : Promise.resolve(Object.keys(mem.books).map(function (k) { return mem.books[k]; })); }
+  function getFile(id) { return db ? run('files', 'readonly', function (t) { return t.objectStore('files').get(id); }) : Promise.resolve(mem.files[id]); }
+  function putBook(m, f) {
+    if (!db) { mem.books[m.id] = m; mem.files[m.id] = f; return Promise.resolve(); }
+    return run(['books', 'files'], 'readwrite', function (t) { t.objectStore('files').put(f, m.id); t.objectStore('books').put(m); });
+  }
+  function putMeta(m) {
+    if (!db) { mem.books[m.id] = m; return Promise.resolve(); }
+    return run('books', 'readwrite', function (t) { return t.objectStore('books').put(m); });
+  }
+  function delBook(id) {
+    if (!db) { delete mem.books[id]; delete mem.files[id]; return Promise.resolve(); }
+    return run(['books', 'files'], 'readwrite', function (t) { t.objectStore('books').delete(id); t.objectStore('files').delete(id); });
+  }
+
+  /* ---------- page model ---------- */
+  /* off=1: 2枚目を単独ページにして、3枚目から2枚ずつ組む。off=0: 2枚目から組む */
+  function total() { return single ? N : 1 + off + Math.ceil((N - 1 - off) / 2); }
+  function pagesOf(k) {
+    if (single) return [k + 1];
+    if (k === 0) return [1];
+    if (off === 1 && k === 1) return [2];
+    var k0 = 1 + off, a = 2 + off + 2 * (k - k0);
+    return [a, a + 1].filter(function (n) { return n <= N; });
+  }
+  function slots(k) {
+    if (single) return { L: null, R: k + 1 };
+    var pg = pagesOf(k);
+    if (pg.length === 2) return rtl ? { R: pg[0], L: pg[1] } : { L: pg[0], R: pg[1] };
+    var last = k === total() - 1 && k >= 1 + off;
+    if (last) return rtl ? { R: pg[0], L: null } : { L: pg[0], R: null };
+    return rtl ? { L: pg[0], R: null } : { R: pg[0], L: null };
+  }
+  function curPage() { return pagesOf(spread)[0]; }
+  function pageToSpread(p) {
+    if (single) return p - 1;
+    if (p <= 1) return 0;
+    if (off === 1 && p === 2) return 1;
+    var k0 = 1 + off;
+    return k0 + Math.floor((p - (2 + off)) / 2);
+  }
+
+  /* ---------- rendering ---------- */
+  function renderPage(n) {
+    var c = cache.get(n);
+    if (c) { cache.delete(n); cache.set(n, c); return Promise.resolve(c); }
+    if (inflight.has(n)) return inflight.get(n);
+    var myGen = gen, doc = pdf;
+    var job = function () {
+      return doc.getPage(n).then(function (page) {
+        var w = Math.max(2, Math.round(halfW * dpr)), h = Math.max(2, Math.round(boxH * dpr));
+        var cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        var ctx = cv.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+        var v0 = page.getViewport({ scale: 1 });
+        var s = Math.min(w / v0.width, h / v0.height);
+        var vp = page.getViewport({ scale: s, offsetX: (w - v0.width * s) / 2, offsetY: (h - v0.height * s) / 2 });
+        return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
+          page.cleanup();
+          if (myGen === gen) {
+            cache.set(n, cv);
+            while (cache.size > 24) cache.delete(cache.keys().next().value);
+          }
+          return cv;
+        });
+      });
+    };
+    var p = queue.then(job).catch(function (e) { return null; }).then(function (r) { inflight.delete(n); return r; });
+    queue = p;
+    inflight.set(n, p);
+    return p;
+  }
+  function ensure(list) { return Promise.all(list.filter(Boolean).map(renderPage)); }
+  function draw(target, c) {
+    var cv = document.createElement('canvas');
+    cv.width = c.width; cv.height = c.height;
+    cv.getContext('2d').drawImage(c, 0, 0);
+    target.replaceChildren(cv);
+  }
+  function paint(target, n) {
+    target.dataset.n = n || '';
+    target.replaceChildren();
+    if (!n) return;
+    var c = cache.get(n);
+    if (c) { draw(target, c); return; }
+    renderPage(n).then(function (cv) { if (cv && target.dataset.n === String(n)) draw(target, cv); });
+  }
+  function setHalf(side, n) {
+    var t = side === 'L' ? el.hL : el.hR;
+    paint(t, n);
+    t.classList.toggle('blank', !n);
+  }
+  function setStatic(s) { setHalf('L', s.L); setHalf('R', s.R); shift(s); }
+  function shift(s) {
+    var solo = '';
+    if (!single) { if (s.L && !s.R) solo = 'L'; else if (s.R && !s.L) solo = 'R'; }
+    el.book.dataset.solo = solo;
+    el.book.classList.toggle('solo', !!solo);
+  }
+
+  /* ---------- navigation ---------- */
+  function go(k, dir) {
+    if (!pdf) return Promise.resolve();
+    if (busy) { pending = { k: k, dir: dir }; return Promise.resolve(); }
+    k = Math.max(0, Math.min(total() - 1, k));
+    if (dir !== 0 && k === spread) return Promise.resolve();
+    busy = true;
+    var my = ++token;
+    function done() {
+      busy = false;
+      if (pending) { var q = pending; pending = null; go(q.k, q.dir); } else prefetch(my);
+    }
+    return (single ? goSingle(k, dir) : goTwo(k, dir)).then(function () {
+      spread = k;
+      updateUI();
+      saveProgress();
+      done();
+    }, done);
+  }
+  function goTwo(k, dir) {
+    var nw = slots(k);
+    if (dir === 0) return ensure([nw.L, nw.R]).then(function () { setStatic(nw); });
+    var old = slots(spread);
+    var fwd = dir > 0;
+    var side = (fwd === rtl) ? 'L' : 'R';
+    var opp = side === 'L' ? 'R' : 'L';
+    return ensure([old.L, old.R, nw.L, nw.R]).then(function () {
+      setHalf(side, nw[side]);
+      setHalf(opp, old[opp]);
+      paint(el.pgF, old[side]);
+      paint(el.pgB, nw[opp]);
+      el.leaf.style.left = side === 'L' ? '0' : '50%';
+      el.leaf.style.transformOrigin = side === 'L' ? 'right center' : 'left center';
+      el.leaf.hidden = false;
+      shift(nw);
+      var end = side === 'L' ? 180 : -180;
+      var dur = reduced() ? 1 : 750;
+      var ease = 'cubic-bezier(.45,.05,.25,1)';
+      var a = el.leaf.animate([{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(' + end + 'deg)' }], { duration: dur, easing: ease, fill: 'forwards' });
+      el.lf.lastElementChild.animate([{ opacity: 0 }, { opacity: .5, offset: .5 }, { opacity: .5 }], { duration: dur, easing: ease });
+      el.lb.lastElementChild.animate([{ opacity: .5 }, { opacity: .5, offset: .5 }, { opacity: 0 }], { duration: dur, easing: ease });
+      return a.finished.then(function () {
+        setHalf(opp, nw[opp]);
+        el.leaf.hidden = true;
+        a.cancel();
+      });
+    });
+  }
+  function goSingle(k, dir) {
+    var n = k + 1;
+    return ensure([n]).then(function () {
+      setHalf('R', n);
+      shift({ L: null, R: n });
+      if (dir !== 0 && !reduced()) {
+        var dx = (dir > 0) === rtl ? -28 : 28;
+        el.hR.animate([{ opacity: 0, transform: 'translateX(' + dx + 'px)' }, { opacity: 1, transform: 'none' }], { duration: 240, easing: 'ease-out' });
+      }
+    });
+  }
+  function prefetch(my) {
+    var order = [spread + 1, spread - 1, spread + 2, spread - 2];
+    var chain = Promise.resolve();
+    order.forEach(function (k) {
+      if (k < 0 || k >= total()) return;
+      pagesOf(k).forEach(function (n) {
+        chain = chain.then(function () { return my === token && pdf ? renderPage(n) : null; });
+      });
+    });
+  }
+  function turn(visual) {
+    var fwd = (visual === 'left') === rtl;
+    go(spread + (fwd ? 1 : -1), fwd ? 1 : -1);
+  }
+
+  /* ---------- reader UI ---------- */
+  function updateUI() {
+    var pages = pagesOf(spread);
+    el.pos.textContent = (pages.length > 1 ? pages[0] + '–' + pages[1] : pages[0]) + ' / ' + N;
+    el.slider.value = String(curPage());
+    var last = spread >= total() - 1;
+    var first = spread <= 0;
+    el.navL.disabled = rtl ? last : first;
+    el.navR.disabled = rtl ? first : last;
+    el.navL.setAttribute('aria-label', rtl ? '次のページへ' : '前のページへ');
+    el.navR.setAttribute('aria-label', rtl ? '前のページへ' : '次のページへ');
+  }
+  function applyChrome() {
+    el.book.classList.toggle('single', single);
+    el.dirBtn.textContent = rtl ? '右開き' : '左開き';
+    el.modeBtn.textContent = single ? '1ページ' : '見開き';
+    el.offBtn.hidden = single || !pdf;
+    el.slider.style.direction = rtl ? 'rtl' : 'ltr';
+  }
+  function layout() {
+    var r = el.stage.getBoundingClientRect();
+    var gutter = r.width > 700 ? 56 : 8;
+    var availW = Math.max(60, r.width - 32 - gutter * 2);
+    var availH = Math.max(60, r.height - 20);
+    if (single) halfW = Math.min(availW, availH * ratio);
+    else halfW = Math.min(availW / 2, availH * ratio);
+    boxH = halfW / ratio;
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    el.book.style.width = Math.round(single ? halfW : halfW * 2) + 'px';
+    el.book.style.height = Math.round(boxH) + 'px';
+  }
+  function refresh() {
+    if (!pdf) return;
+    if (busy) { setTimeout(refresh, 200); return; }
+    token++; gen++;
+    cache.clear(); inflight.clear();
+    layout();
+    applyChrome();
+    busy = true;
+    var s = slots(spread);
+    ensure([s.L, s.R]).then(function () { setStatic(s); updateUI(); busy = false; prefetch(token); });
+  }
+
+  /* ---------- progress ---------- */
+  function saveProgress() {
+    if (!curMeta) return;
+    curMeta.page = curPage(); curMeta.opened = Date.now();
+    clearTimeout(saveT); saveT = setTimeout(flushProgress, 500);
+  }
+  function flushProgress() {
+    clearTimeout(saveT); saveT = null;
+    if (curMeta) putMeta(curMeta).catch(function () {});
+  }
+
+  /* ---------- screens ---------- */
+  function setMode(m) {
+    var r = m === 'reader';
+    el.stage.hidden = !r; el.foot.hidden = !r; el.shelf.hidden = r;
+    el.backBtn.hidden = !r; el.addBtn.hidden = r;
+    el.dirBtn.hidden = !r; el.modeBtn.hidden = !r; el.fsBtn.hidden = !r;
+    el.offBtn.hidden = !r || single;
+    if (!r) el.name.textContent = 'スキャン本棚';
+  }
+  function fmtSize(b) { return b >= 1e9 ? (b / 1e9).toFixed(1) + ' GB' : Math.max(1, Math.round(b / 1e6)) + ' MB'; }
+  function renderShelf() {
+    coverUrls.forEach(function (u) { URL.revokeObjectURL(u); });
+    coverUrls = [];
+    books.sort(function (a, b) { return (b.opened || 0) - (a.opened || 0); });
+    var has = books.length > 0;
+    el.empty.hidden = has; el.grid.hidden = !has; el.shelfHead.hidden = !has;
+    var sum = books.reduce(function (s, b) { return s + (b.size || 0); }, 0);
+    el.shelfInfo.textContent = books.length + '冊 ・ 保存容量 ' + fmtSize(sum) + (db ? '' : ' ・ この環境では閉じると消えます');
+    el.grid.replaceChildren.apply(el.grid, books.map(card));
+  }
+  function mk(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function card(m) {
+    var c = mk('div', 'card');
+    var open = mk('button', 'open'); open.type = 'button';
+    var cover = mk('span', 'cover');
+    if (m.cover) {
+      var img = new Image(); img.alt = '';
+      var u = URL.createObjectURL(m.cover); coverUrls.push(u); img.src = u;
+      cover.appendChild(img);
+    }
+    var pct = m.page > 1 ? Math.min(100, Math.round(m.page / m.N * 100)) : 0;
+    var prog = mk('span', 'prog'); prog.style.direction = m.rtl === false ? 'ltr' : 'rtl';
+    var fill = document.createElement('i'); fill.style.width = pct + '%'; prog.appendChild(fill);
+    open.append(cover, mk('span', 'title', m.title), mk('span', 'meta', m.page > 1 ? m.page + ' / ' + m.N + ' ページ' : m.N + ' ページ ・ 未読'), prog);
+    open.addEventListener('click', function () { openBook(m); });
+    var act = mk('div', 'actions');
+    var del = mk('button', 'link idle', '削除'); del.type = 'button';
+    del.addEventListener('click', function () { c.classList.add('confirm'); });
+    var yes = mk('button', 'link danger ask', '削除する'); yes.type = 'button';
+    yes.addEventListener('click', function () { removeBook(m); });
+    var no = mk('button', 'link ask', 'やめる'); no.type = 'button';
+    no.addEventListener('click', function () { c.classList.remove('confirm'); });
+    act.append(del, yes, no);
+    c.append(open, act);
+    return c;
+  }
+  function removeBook(m) {
+    delBook(m.id).catch(function () {}).then(function () {
+      books = books.filter(function (b) { return b !== m; });
+      if (curMeta === m) curMeta = null;
+      renderShelf();
+    });
+  }
+
+  /* ---------- open / add ---------- */
+  function fileRange(file) {
+    var tr = new pdfjsLib.PDFDataRangeTransport(file.size, null);
+    tr.requestDataRange = function (begin, end) {
+      file.slice(begin, end).arrayBuffer().then(function (buf) { tr.onDataRange(begin, new Uint8Array(buf)); });
+    };
+    return tr;
+  }
+  function loadDoc(blob) {
+    return pdfjsLib.getDocument({ range: fileRange(blob), length: blob.size, disableAutoFetch: true, disableStream: true, isEvalSupported: false }).promise;
+  }
+  function openBook(m) {
+    msg('');
+    getFile(m.id).then(function (blob) {
+      if (!blob) { msg('この本のデータが見つかりませんでした。削除して、もう一度追加してください。'); return; }
+      try { history.pushState({ r: 1 }, ''); pushed = true; } catch (e) { pushed = false; }
+      return startReader(m, blob);
+    }).catch(function () { msg('この本を開けませんでした。'); showShelf(); });
+  }
+  function startReader(meta, blob) {
+    return loadDoc(blob).then(function (doc) {
+      if (pdf) { try { pdf.destroy(); } catch (e) {} }
+      pdf = doc; N = doc.numPages;
+      return doc.getPage(Math.min(3, N));
+    }).then(function (p) {
+      var v = p.getViewport({ scale: 1 });
+      ratio = v.width / v.height;
+      curMeta = meta; rtl = meta.rtl !== false; off = meta.off === 0 ? 0 : 1;
+      el.name.textContent = meta.title;
+      setMode('reader');
+      el.slider.max = String(N);
+      var r = el.stage.getBoundingClientRect();
+      if (!userMode) single = r.width < r.height * 1.05;
+      cache.clear(); inflight.clear(); gen++;
+      applyChrome(); layout();
+      spread = 0; busy = false;
+      var saved = Math.max(1, Math.min(N, meta.page || 1));
+      return go(pageToSpread(saved), 0);
+    });
+  }
+  function showShelf() {
+    token++; busy = false; pending = null;
+    flushProgress();
+    if (pdf) { try { pdf.destroy(); } catch (e) {} pdf = null; }
+    cache.clear(); inflight.clear(); gen++;
+    curMeta = null;
+    setMode('shelf');
+    renderShelf();
+  }
+  function makeMeta(f, id) {
+    return loadDoc(f).then(function (doc) {
+      return doc.getPage(1).then(function (page) {
+        var v0 = page.getViewport({ scale: 1 });
+        var vp = page.getViewport({ scale: 360 / v0.width });
+        var cv = document.createElement('canvas');
+        cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+        var ctx = cv.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+        return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
+          return new Promise(function (r) { cv.toBlob(r, 'image/jpeg', 0.82); });
+        });
+      }).then(function (cover) {
+        var m = { id: id, name: f.name, title: f.name.replace(/\.pdf$/i, ''), size: f.size, N: doc.numPages, cover: cover, added: Date.now(), opened: Date.now(), page: 1, rtl: true, off: 1 };
+        doc.destroy();
+        return m;
+      });
+    });
+  }
+  function addFiles(files) {
+    var list = Array.prototype.slice.call(files).filter(function (f) { return /\.pdf$/i.test(f.name) || f.type === 'application/pdf'; });
+    if (!list.length) { msg('PDFファイルを選んでください。'); return Promise.resolve(); }
+    var last = null, i = 0;
+    function next() {
+      if (i >= list.length) return Promise.resolve();
+      var f = list[i++], id = f.name + ':' + f.size;
+      msg('追加しています (' + i + '/' + list.length + ') ' + f.name);
+      var ex = books.filter(function (b) { return b.id === id; })[0];
+      if (ex) { last = ex; return next(); }
+      return makeMeta(f, id).then(function (m) { return putBook(m, f).then(function () { books.push(m); last = m; }); }).then(next);
+    }
+    return next().then(function () {
+      try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+      msg(''); renderShelf();
+      if (list.length === 1 && last) openBook(last);
+    }, function (e) {
+      renderShelf();
+      msg(e && e.name === 'QuotaExceededError' ? '保存容量が足りません。不要な本を削除してから追加してください。' : 'PDFを追加できませんでした。PDFファイルか確認してください。');
+    });
+  }
+
+  /* ---------- events ---------- */
+  function pick() { el.file.click(); }
+  el.addBtn.addEventListener('click', pick);
+  $('#pickBtn').addEventListener('click', pick);
+  el.file.addEventListener('change', function () { var fs = Array.prototype.slice.call(el.file.files); el.file.value = ''; if (fs.length) addFiles(fs); });
+  ['dragover', 'dragenter'].forEach(function (t) { document.addEventListener(t, function (e) { e.preventDefault(); if (!pdf) el.drop.classList.add('over'); }); });
+  ['dragleave', 'drop'].forEach(function (t) { document.addEventListener(t, function (e) { e.preventDefault(); el.drop.classList.remove('over'); }); });
+  document.addEventListener('drop', function (e) { if (!pdf && e.dataTransfer && e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+
+  el.backBtn.addEventListener('click', function () {
+    if (pushed) { pushed = false; try { history.back(); return; } catch (e) {} }
+    showShelf();
+  });
+  window.addEventListener('popstate', function () { if (pdf) { pushed = false; showShelf(); } });
+
+  el.navL.addEventListener('click', function () { turn('left'); });
+  el.navR.addEventListener('click', function () { turn('right'); });
+  el.slider.addEventListener('input', function () { el.pos.textContent = el.slider.value + ' / ' + N; });
+  el.slider.addEventListener('change', function () {
+    var k = pageToSpread(parseInt(el.slider.value, 10));
+    go(k, k > spread ? 1 : -1);
+  });
+  el.dirBtn.addEventListener('click', function () {
+    rtl = !rtl; if (curMeta) { curMeta.rtl = rtl; flushProgress(); } refresh();
+  });
+  el.offBtn.addEventListener('click', function () {
+    var p = curPage(); off = 1 - off; if (curMeta) { curMeta.off = off; flushProgress(); } spread = pageToSpread(p); refresh();
+  });
+  el.modeBtn.addEventListener('click', function () {
+    var p = curPage(); single = !single; userMode = true; spread = pageToSpread(p); refresh();
+  });
+  el.fsBtn.addEventListener('click', function () {
+    try {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else document.documentElement.requestFullscreen().catch(function () {});
+    } catch (e) {}
+  });
+
+  document.addEventListener('keydown', function (e) {
+    if (!pdf || (e.target === el.slider && (e.key === 'ArrowLeft' || e.key === 'ArrowRight'))) return;
+    var k = e.key;
+    if (k === 'ArrowLeft') turn('left');
+    else if (k === 'ArrowRight') turn('right');
+    else if (k === 'PageDown' || k === ' ') { e.preventDefault(); go(spread + 1, 1); }
+    else if (k === 'PageUp') go(spread - 1, -1);
+    else if (k === 'Home') go(0, -1);
+    else if (k === 'End') go(total() - 1, 1);
+  });
+  document.addEventListener('visibilitychange', function () { if (document.hidden) flushProgress(); });
+
+  var down = null;
+  el.book.addEventListener('pointerdown', function (e) { down = { x: e.clientX, y: e.clientY }; });
+  el.book.addEventListener('pointerup', function (e) {
+    if (!down) return;
+    var dx = e.clientX - down.x, dy = e.clientY - down.y;
+    down = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      var fwd = rtl ? dx > 0 : dx < 0;
+      go(spread + (fwd ? 1 : -1), fwd ? 1 : -1);
+    } else if (Math.abs(dx) < 10 && Math.abs(dy) < 10) {
+      var r = el.book.getBoundingClientRect();
+      turn(e.clientX < r.left + r.width / 2 ? 'left' : 'right');
+    }
+  });
+
+  var t = null;
+  new ResizeObserver(function () {
+    clearTimeout(t);
+    t = setTimeout(function () { if (pdf) refresh(); }, 150);
+  }).observe(el.stage);
+
+  /* ---------- start ---------- */
+  setMode('shelf');
+  openDB().then(function (d) { db = d; return allBooks(); }).then(function (list) {
+    books = list || []; renderShelf();
+  }).catch(function () { books = []; renderShelf(); });
+})();
+</script>
+
+<script>
+if ('serviceWorker' in navigator) { addEventListener('load', function () { navigator.serviceWorker.register('sw.js').catch(function () {}); }); }
+</script>
+</body>
+</html>
