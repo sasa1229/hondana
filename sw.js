@@ -1,5 +1,5 @@
 // 画面を更新したら VERSION の数字を上げてください(古いキャッシュが入れ替わります)
-const VERSION = 'shelf-v1';
+const VERSION = 'shelf-v2';
 const ASSETS = ['./', 'index.html', 'manifest.webmanifest', 'vendor/pdf.min.js', 'vendor/pdf.worker.min.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/maskable-512.png', 'icons/apple-touch-icon.png'];
 self.addEventListener('install', e => {

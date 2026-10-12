@@ -95,7 +95,7 @@ button { font: inherit; color: inherit; }
 #msg { margin: 0; min-height: 1.4em; color: var(--accent); font-weight: 500; overflow-wrap: anywhere; }
 
 /* reader */
-#stage { position: relative; flex: 1 1 0; min-height: 0; overflow: hidden; padding-inline: 16px; display: flex; align-items: center; justify-content: center; }
+#stage { position: relative; flex: 1 1 0; min-height: 0; overflow: hidden; touch-action: manipulation; padding-inline: 16px; display: flex; align-items: center; justify-content: center; }
 #book { position: relative; perspective: 4200px; transition: transform .7s cubic-bezier(.45, .05, .25, 1); flex: none; }
 #book[data-solo="L"] { transform: translateX(25%); }
 #book[data-solo="R"] { transform: translateX(-25%); }
@@ -246,6 +246,29 @@ button { font: inherit; color: inherit; }
     return run(['books', 'files'], 'readwrite', function (t) { t.objectStore('books').delete(id); t.objectStore('files').delete(id); });
   }
 
+  /* ---------- source pages (横長のページは見開きのスキャンとみなし、左右2ページに分ける) ---------- */
+  var src = [];
+  function scanWide(doc) {
+    var wide = [], chain = Promise.resolve();
+    for (var i = 1; i <= doc.numPages; i++) (function (n) {
+      chain = chain.then(function () { return doc.getPage(n); }).then(function (p) {
+        var v = p.getViewport({ scale: 1 });
+        if (v.width > v.height * 1.15) wide.push(n);
+      });
+    })(i);
+    return chain.then(function () { return wide; });
+  }
+  function buildSrc(count, wide, r) {
+    var set = {}, out = [];
+    (wide || []).forEach(function (n) { set[n] = true; });
+    for (var n = 1; n <= count; n++) {
+      if (set[n]) out.push({ p: n, part: r ? 'R' : 'L' }, { p: n, part: r ? 'L' : 'R' });
+      else out.push({ p: n, part: '' });
+    }
+    return out;
+  }
+  function pageSize(v, part) { return { w: part ? v.width / 2 : v.width, h: v.height }; }
+
   /* ---------- page model ---------- */
   /* off=1: 2枚目を単独ページにして、3枚目から2枚ずつ組む。off=0: 2枚目から組む */
   function total() { return single ? N : 1 + off + Math.ceil((N - 1 - off) / 2); }
@@ -278,22 +301,24 @@ button { font: inherit; color: inherit; }
     var c = cache.get(n);
     if (c) { cache.delete(n); cache.set(n, c); return Promise.resolve(c); }
     if (inflight.has(n)) return inflight.get(n);
-    var myGen = gen, doc = pdf;
+    var myGen = gen, doc = pdf, sp = src[n - 1] || { p: n, part: '' };
     var job = function () {
-      return doc.getPage(n).then(function (page) {
+      return doc.getPage(sp.p).then(function (page) {
         var w = Math.max(2, Math.round(halfW * dpr)), h = Math.max(2, Math.round(boxH * dpr));
         var cv = document.createElement('canvas');
         cv.width = w; cv.height = h;
         var ctx = cv.getContext('2d');
         ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
         var v0 = page.getViewport({ scale: 1 });
-        var s = Math.min(w / v0.width, h / v0.height);
-        var vp = page.getViewport({ scale: s, offsetX: (w - v0.width * s) / 2, offsetY: (h - v0.height * s) / 2 });
+        var ps = pageSize(v0, sp.part);
+        var s = Math.min(w / ps.w, h / ps.h);
+        var ox = (w - ps.w * s) / 2 - (sp.part === 'R' ? ps.w * s : 0);
+        var vp = page.getViewport({ scale: s, offsetX: ox, offsetY: (h - ps.h * s) / 2 });
         return page.render({ canvasContext: ctx, viewport: vp }).promise.then(function () {
           page.cleanup();
           if (myGen === gen) {
             cache.set(n, cv);
-            while (cache.size > 24) cache.delete(cache.keys().next().value);
+            while (cache.size > (dpr > 2 ? 12 : 24)) cache.delete(cache.keys().next().value);
           }
           return cv;
         });
@@ -433,7 +458,7 @@ button { font: inherit; color: inherit; }
     if (single) halfW = Math.min(availW, availH * ratio);
     else halfW = Math.min(availW / 2, availH * ratio);
     boxH = halfW / ratio;
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    dpr = Math.min(window.devicePixelRatio || 1, 3);
     el.book.style.width = Math.round(single ? halfW : halfW * 2) + 'px';
     el.book.style.height = Math.round(boxH) + 'px';
   }
@@ -539,14 +564,21 @@ button { font: inherit; color: inherit; }
     }).catch(function () { msg('この本を開けませんでした。'); showShelf(); });
   }
   function startReader(meta, blob) {
-    return loadDoc(blob).then(function (doc) {
+    var doc;
+    return loadDoc(blob).then(function (d) {
+      doc = d;
+      return meta.wide ? meta.wide : scanWide(doc);
+    }).then(function (wide) {
       if (pdf) { try { pdf.destroy(); } catch (e) {} }
-      pdf = doc; N = doc.numPages;
-      return doc.getPage(Math.min(3, N));
-    }).then(function (p) {
-      var v = p.getViewport({ scale: 1 });
-      ratio = v.width / v.height;
-      curMeta = meta; rtl = meta.rtl !== false; off = meta.off === 0 ? 0 : 1;
+      pdf = doc;
+      rtl = meta.rtl !== false;
+      src = buildSrc(doc.numPages, wide, rtl); N = src.length;
+      if (!meta.wide || meta.N !== N) { meta.wide = wide; meta.N = N; putMeta(meta).catch(function () {}); }
+      var sp = src[Math.min(3, N) - 1];
+      return doc.getPage(sp.p).then(function (p) { return pageSize(p.getViewport({ scale: 1 }), sp.part); });
+    }).then(function (ps) {
+      ratio = ps.w / ps.h;
+      curMeta = meta; off = meta.off === 0 ? 0 : 1;
       el.name.textContent = meta.title;
       setMode('reader');
       el.slider.max = String(N);
@@ -581,9 +613,11 @@ button { font: inherit; color: inherit; }
           return new Promise(function (r) { cv.toBlob(r, 'image/jpeg', 0.82); });
         });
       }).then(function (cover) {
-        var m = { id: id, name: f.name, title: f.name.replace(/\.pdf$/i, ''), size: f.size, N: doc.numPages, cover: cover, added: Date.now(), opened: Date.now(), page: 1, rtl: true, off: 1 };
-        doc.destroy();
-        return m;
+        return scanWide(doc).then(function (wide) {
+          var m = { id: id, name: f.name, title: f.name.replace(/\.pdf$/i, ''), size: f.size, N: doc.numPages + wide.length, wide: wide, cover: cover, added: Date.now(), opened: Date.now(), page: 1, rtl: true, off: 1 };
+          doc.destroy();
+          return m;
+        });
       });
     });
   }
@@ -632,7 +666,7 @@ button { font: inherit; color: inherit; }
     go(k, k > spread ? 1 : -1);
   });
   el.dirBtn.addEventListener('click', function () {
-    rtl = !rtl; if (curMeta) { curMeta.rtl = rtl; flushProgress(); } refresh();
+    rtl = !rtl; if (curMeta) { curMeta.rtl = rtl; src = buildSrc(pdf.numPages, curMeta.wide, rtl); flushProgress(); } refresh();
   });
   el.offBtn.addEventListener('click', function () {
     var p = curPage(); off = 1 - off; if (curMeta) { curMeta.off = off; flushProgress(); } spread = pageToSpread(p); refresh();
